@@ -1,39 +1,59 @@
 package main
 
 import (
+	"context"
+	"log"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
+	"os"
+
+	"github.com/zmb3/spotify/v2"
+	spotifyauth "github.com/zmb3/spotify/v2/auth"
+	"golang.org/x/oauth2/clientcredentials"
 
 	"github.com/gin-gonic/gin"
 )
 
-func proxy(c *gin.Context) {
-	remote, err := url.Parse("http://172.31.0.6:8080")
-	if err != nil {
-		panic(err)
-	}
+// TODO 検索の際にアーティスト以外にも対応
+func search(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
 
-	proxy := httputil.NewSingleHostReverseProxy(remote)
-	//Define the director func
-	//This is a good place to log, for example
-	proxy.Director = func(req *http.Request) {
-		req.Header = c.Request.Header
-		req.Host = remote.Host
-		req.URL.Scheme = remote.Scheme
-		req.URL.Host = remote.Host
-		req.URL.Path = c.Param("proxyPath")
+	return func(c *gin.Context) {
+		searchResult, err := client.Search(ctx, c.Query("q"), spotify.SearchTypeArtist)
+		if err != nil {
+			log.Fatal(err)
+			c.JSON(err.(spotify.Error).Status, err.Error())
+			return
+		}
+		c.JSON(http.StatusOK, searchResult)
 	}
-
-	proxy.ServeHTTP(c.Writer, c.Request)
 }
 
-func main() {
+func playlists() func(c *gin.Context) {
 
+	return func(c *gin.Context) {
+
+	}
+}
+
+// clientを作成している部分の分離
+func main() {
 	r := gin.Default()
 
-	//Create a catchall route
-	r.Any("/*proxyPath", proxy)
+	ctx := context.Background()
+
+	config := &clientcredentials.Config{
+		ClientID:     os.Getenv("SPOTIFY_ID"),
+		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
+		TokenURL:     spotifyauth.TokenURL,
+	}
+	token, err := config.Token(ctx)
+	if err != nil {
+		log.Fatalf("couldn't get token: %v", err)
+	}
+	httpClient := spotifyauth.New().Client(ctx, token)
+	client := spotify.New(httpClient)
+	spotify := r.RouterGroup.Group("/v1")
+	spotify.GET("/search", search(client, ctx))
+	spotify.GET("/me/playlists", playlists())
 
 	r.Run(":8000")
 }
