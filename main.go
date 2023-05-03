@@ -22,7 +22,12 @@ import (
 func search(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
 
 	return func(c *gin.Context) {
-		searchResult, err := client.Search(ctx, c.Query("q"), spotify.SearchTypeArtist)
+		// 何も指定していない場合はアーティスト名がaから始まるものについて出力
+		searchQuery := c.Query("q")
+		if searchQuery == "" {
+			searchQuery = "a"
+		}
+		searchResult, err := client.Search(ctx, searchQuery, spotify.SearchTypeArtist)
 		if err != nil {
 			log.Fatal(err)
 			c.JSON(err.(spotify.Error).Status, err.Error())
@@ -32,12 +37,6 @@ func search(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
 	}
 }
 
-func playlists() func(c *gin.Context) {
-
-	return func(c *gin.Context) {
-
-	}
-}
 func TokenProxy() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		remote, err := url.Parse("https://accounts.spotify.com/api/token")
@@ -104,7 +103,5 @@ func main() {
 	}))
 	spotify := r.RouterGroup.Group("/v1")
 	spotify.GET("/search", search(client, ctx))
-	spotify.GET("/me/playlists", playlists())
-
 	r.Run(":" + os.Getenv("API_PORT"))
 }
