@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,9 +15,128 @@ import (
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2/clientcredentials"
+	"gonum.org/v1/gonum/mat"
+	"gonum.org/v1/gonum/stat"
 
 	"github.com/gin-gonic/gin"
 )
+
+type MusicPlot struct {
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	IsPlaylist bool    `json:"is_playlist"`
+}
+type MusicPlots struct {
+	Plots []MusicPlot `json:"plots"`
+}
+
+func normalizeAudioFeatures(features *spotify.AudioFeatures, dim int) []float64 {
+	arr := make([]float64, dim)
+	arr[0] = float64(features.Acousticness)
+	arr[1] = float64(features.Danceability)
+	arr[2] = float64(features.Energy)
+	arr[3] = float64(features.Instrumentalness)
+	arr[4] = float64((features.Key + 1) / 12.0)
+	arr[5] = float64(features.Liveness)
+	arr[6] = float64((features.Loudness + 60) / 60.0)
+	arr[7] = float64(features.Mode)
+	arr[8] = float64(features.Speechiness)
+	// 正規化の方法を考える
+	arr[9] = float64(features.Tempo / 200.0)
+	arr[10] = float64((features.TimeSignature - 3) / 5.0)
+	arr[11] = float64(features.Valence)
+	return arr
+}
+func Pca(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
+
+	return func(c *gin.Context) {
+		// 何も指定していない場合はアーティスト名がaから始まるものについて出力
+		playlistID := c.Query("playlistID")
+		artistID := c.Query("artistID")
+		playlist, err := client.GetPlaylist(ctx, spotify.ID(playlistID))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, err)
+		}
+		var playlistIDs []spotify.ID
+		if len(playlist.Tracks.Tracks) == 0 {
+			c.JSON(http.StatusBadRequest, errors.New("プレイリスト内に楽曲がありません。"))
+			return
+		}
+		for _, track := range playlist.Tracks.Tracks {
+			playlistIDs = append(playlistIDs, track.Track.ID)
+		}
+		// アーティストのトップの楽曲と楽曲情報を取得
+		artistTracks, err := client.GetArtistsTopTracks(ctx, spotify.ID(artistID), "JP")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, err)
+			return
+		}
+		var artistTrackIDs []spotify.ID
+		for _, track := range artistTracks {
+			artistTrackIDs = append(artistTrackIDs, track.ID)
+		}
+		artistAudioFeatures, err := client.GetAudioFeatures(ctx, artistTrackIDs...)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, err)
+			return
+		}
+
+		AudioFeatures, err := client.GetAudioFeatures(ctx, playlistIDs...)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, err)
+			return
+		}
+		// 楽曲情報を取得
+		// データの正規化
+		dim := 12
+		y := mat.NewDense(len(playlistIDs), dim, nil)
+		for i, feature := range AudioFeatures {
+			dense := mat.NewDense(dim, 1, normalizeAudioFeatures(feature, dim))
+			y.SetRow(i, mat.Col(nil, 0, dense))
+		}
+		// pcaの実行
+		var pc stat.PC
+		ok := pc.PrincipalComponents(y, nil)
+		if !ok {
+			log.Fatal("PCA fails")
+			c.JSON(http.StatusInternalServerError, errors.New("pca fails"))
+			return
+		}
+		k := 2
+		var proj mat.Dense
+		var vec mat.Dense
+		pc.VectorsTo(&vec)
+		y_ := mat.NewDense(len(artistAudioFeatures), dim, nil)
+		for i, feature := range artistAudioFeatures {
+			dense := mat.NewDense(dim, 1, normalizeAudioFeatures(feature, dim))
+			y_.SetRow(i, mat.Col(nil, 0, dense))
+		}
+		allFeatures := mat.NewDense(len(playlistIDs)+len(artistAudioFeatures), dim, nil)
+		allFeatures.Stack(y, y_)
+		proj.Mul(allFeatures, vec.Slice(0, dim, 0, k))
+		plots := make([]MusicPlot, len(playlistIDs)+len(artistAudioFeatures))
+		for i := 0; i < len(playlistIDs); i++ {
+			plots[i].X = proj.At(i, 0)
+			plots[i].Y = proj.At(i, 1)
+			plots[i].ID = string(playlistIDs[i])
+			plots[i].Name = playlist.Tracks.Tracks[i].Track.Name
+			plots[i].IsPlaylist = true
+		}
+		for i := len(playlistIDs); i < len(playlistIDs)+len(artistAudioFeatures); i++ {
+			plots[i].X = proj.At(i, 0)
+			plots[i].Y = proj.At(i, 1)
+			j := i - len(playlistIDs)
+			plots[i].ID = string(artistTracks[j].ID)
+			plots[i].Name = artistTracks[j].Name
+			plots[i].IsPlaylist = false
+		}
+
+		// データの整形、レスポンス
+		c.JSON(http.StatusOK, MusicPlots{Plots: plots})
+	}
+}
 
 // TODO 検索の際にアーティスト以外にも対応
 func search(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
@@ -56,27 +176,8 @@ func TokenProxy() func(c *gin.Context) {
 		proxy.ServeHTTP(c.Writer, c.Request)
 	}
 }
-
-// clientを作成している部分の分離
-func main() {
-	r := gin.Default()
-
-	ctx := context.Background()
-
-	config := &clientcredentials.Config{
-		ClientID:     os.Getenv("SPOTIFY_ID"),
-		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
-		TokenURL:     spotifyauth.TokenURL,
-	}
-	token, err := config.Token(ctx)
-	if err != nil {
-		log.Fatalf("couldn't get token: %v", err)
-	}
-	httpClient := spotifyauth.New().Client(ctx, token)
-	client := spotify.New(httpClient)
-	apiToken := r.RouterGroup.Group("/api")
-	apiToken.POST("/token", TokenProxy())
-	r.Use(cors.New(cors.Config{
+func setCors() cors.Config {
+	return cors.Config{
 		// アクセスを許可したいアクセス元
 		AllowOrigins: []string{
 			os.Getenv("ALLOW_ORIGIN"),
@@ -100,8 +201,31 @@ func main() {
 		AllowCredentials: true,
 		// preflightリクエストの結果をキャッシュする時間
 		MaxAge: 24 * time.Hour,
-	}))
+	}
+}
+
+// clientを作成している部分の分離
+func main() {
+	r := gin.Default()
+
+	ctx := context.Background()
+
+	config := &clientcredentials.Config{
+		ClientID:     os.Getenv("SPOTIFY_ID"),
+		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
+		TokenURL:     spotifyauth.TokenURL,
+	}
+	token, err := config.Token(ctx)
+	if err != nil {
+		log.Fatalf("couldn't get token: %v", err)
+	}
+	httpClient := spotifyauth.New().Client(ctx, token)
+	client := spotify.New(httpClient)
+	apiToken := r.RouterGroup.Group("/api")
+	apiToken.POST("/token", TokenProxy())
+	r.Use(cors.New(setCors()))
 	spotify := r.RouterGroup.Group("/v1")
 	spotify.GET("/search", search(client, ctx))
+	spotify.GET("/pca", Pca(client, ctx))
 	r.Run(":" + os.Getenv("API_PORT"))
 }
