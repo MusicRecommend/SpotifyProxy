@@ -38,19 +38,32 @@ func normalizeAudioFeatures(features *spotify.AudioFeatures, dim int) []float64 
 	arr[1] = float64(features.Danceability)
 	arr[2] = float64(features.Energy)
 	arr[3] = float64(features.Instrumentalness)
-	arr[4] = float64((features.Key + 1) / 12.0)
-	arr[5] = float64(features.Liveness)
-	arr[6] = float64((features.Loudness + 60) / 60.0)
-	arr[7] = float64(features.Mode)
-	arr[8] = float64(features.Speechiness)
+	// arr[4] = float64((features.Key + 1) / 12.0)
+	arr[4] = float64(features.Liveness)
+	arr[5] = float64((features.Loudness + 60) / 60.0)
+	//arr[7] = float64(features.Mode)
+	arr[6] = float64(features.Speechiness)
 	// 正規化の方法を考える
-	arr[9] = float64(features.Tempo / 200.0)
-	arr[10] = float64((features.TimeSignature - 3) / 5.0)
-	arr[11] = float64(features.Valence)
+	arr[7] = float64(features.Tempo / 200.0)
+	//arr[10] = float64((features.TimeSignature - 3) / 5.0)
+	arr[8] = float64(features.Valence)
 	return arr
 }
-func Pca(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
 
+func ArtistTracksandFeatures(client *spotify.Client, ctx context.Context, artistID spotify.ID) (artistTracks []spotify.FullTrack, artistAudioFeatures []*spotify.AudioFeatures, err error) {
+	artistTracks, err = client.GetArtistsTopTracks(ctx, spotify.ID(artistID), "JP")
+	if err != nil {
+		return
+	}
+	var artistTrackIDs []spotify.ID
+	for _, track := range artistTracks {
+		artistTrackIDs = append(artistTrackIDs, track.ID)
+	}
+	artistAudioFeatures, err = client.GetAudioFeatures(ctx, artistTrackIDs...)
+	return
+}
+func PCA(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
+	dim := 9
 	return func(c *gin.Context) {
 		// 何も指定していない場合はアーティスト名がaから始まるものについて出力
 		playlistID := c.Query("playlistID")
@@ -68,18 +81,10 @@ func Pca(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
 			playlistIDs = append(playlistIDs, track.Track.ID)
 		}
 		// アーティストのトップの楽曲と楽曲情報を取得
-		artistTracks, err := client.GetArtistsTopTracks(ctx, spotify.ID(artistID), "JP")
+
+		artistTracks, artistAudioFeatures, err := ArtistTracksandFeatures(client, ctx, spotify.ID(artistID))
 		if err != nil {
-			c.JSON(http.StatusBadRequest, err)
-			return
-		}
-		var artistTrackIDs []spotify.ID
-		for _, track := range artistTracks {
-			artistTrackIDs = append(artistTrackIDs, track.ID)
-		}
-		artistAudioFeatures, err := client.GetAudioFeatures(ctx, artistTrackIDs...)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, err)
+			c.JSON(err.(spotify.Error).Status, err)
 			return
 		}
 
@@ -88,54 +93,65 @@ func Pca(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, err)
 			return
 		}
+
 		// 楽曲情報を取得
 		// データの正規化
-		dim := 12
 		y := mat.NewDense(len(playlistIDs), dim, nil)
 		for i, feature := range AudioFeatures {
 			dense := mat.NewDense(dim, 1, normalizeAudioFeatures(feature, dim))
 			y.SetRow(i, mat.Col(nil, 0, dense))
 		}
 		// pcaの実行
-		var pc stat.PC
-		ok := pc.PrincipalComponents(y, nil)
-		if !ok {
-			log.Fatal("PCA fails")
-			c.JSON(http.StatusInternalServerError, errors.New("pca fails"))
+		plots, err := calcPCA(y, dim, artistAudioFeatures)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, err)
 			return
 		}
-		k := 2
-		var proj mat.Dense
-		var vec mat.Dense
-		pc.VectorsTo(&vec)
-		y_ := mat.NewDense(len(artistAudioFeatures), dim, nil)
-		for i, feature := range artistAudioFeatures {
-			dense := mat.NewDense(dim, 1, normalizeAudioFeatures(feature, dim))
-			y_.SetRow(i, mat.Col(nil, 0, dense))
-		}
-		allFeatures := mat.NewDense(len(playlistIDs)+len(artistAudioFeatures), dim, nil)
-		allFeatures.Stack(y, y_)
-		proj.Mul(allFeatures, vec.Slice(0, dim, 0, k))
-		plots := make([]MusicPlot, len(playlistIDs)+len(artistAudioFeatures))
+		// データの整形、レスポンス
 		for i := 0; i < len(playlistIDs); i++ {
-			plots[i].X = proj.At(i, 0)
-			plots[i].Y = proj.At(i, 1)
 			plots[i].ID = string(playlistIDs[i])
 			plots[i].Name = playlist.Tracks.Tracks[i].Track.Name
 			plots[i].IsPlaylist = true
 		}
 		for i := len(playlistIDs); i < len(playlistIDs)+len(artistAudioFeatures); i++ {
-			plots[i].X = proj.At(i, 0)
-			plots[i].Y = proj.At(i, 1)
 			j := i - len(playlistIDs)
 			plots[i].ID = string(artistTracks[j].ID)
 			plots[i].Name = artistTracks[j].Name
 			plots[i].IsPlaylist = false
 		}
-
-		// データの整形、レスポンス
 		c.JSON(http.StatusOK, MusicPlots{Plots: plots})
 	}
+}
+func calcPCA(y *mat.Dense, dim int, artistAudioFeatures []*spotify.AudioFeatures) (plots []MusicPlot, err error) {
+	var pc stat.PC
+	ok := pc.PrincipalComponents(y, nil)
+	if !ok {
+		log.Fatal("PCA fails")
+		err = errors.New("PCAの実行に失敗しました。")
+		return
+	}
+	// 分析後の次元数
+	afterDim := 2
+	var proj mat.Dense
+	var vec mat.Dense
+	artistsNum := len(artistAudioFeatures)
+	pc.VectorsTo(&vec)
+	y_ := mat.NewDense(artistsNum, dim, nil)
+	for i, feature := range artistAudioFeatures {
+		dense := mat.NewDense(dim, 1, normalizeAudioFeatures(feature, dim))
+		y_.SetRow(i, mat.Col(nil, 0, dense))
+	}
+	playlistsNum, _ := y.Dims()
+	allFeatures := mat.NewDense(playlistsNum+artistsNum, dim, nil)
+	allFeatures.Stack(y, y_)
+	proj.Mul(allFeatures, vec.Slice(0, dim, 0, afterDim))
+	plots = make([]MusicPlot, playlistsNum+artistsNum)
+	for i := 0; i < len(plots); i++ {
+		plots[i].X = proj.At(i, 0)
+		plots[i].Y = proj.At(i, 1)
+	}
+	return
+
 }
 
 // TODO 検索の際にアーティスト以外にも対応
@@ -226,6 +242,6 @@ func main() {
 	r.Use(cors.New(setCors()))
 	spotify := r.RouterGroup.Group("/v1")
 	spotify.GET("/search", search(client, ctx))
-	spotify.GET("/pca", Pca(client, ctx))
+	spotify.GET("/pca", PCA(client, ctx))
 	r.Run(":" + os.Getenv("API_PORT"))
 }
