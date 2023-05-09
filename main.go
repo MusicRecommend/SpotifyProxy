@@ -71,6 +71,7 @@ func PCA(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
 		playlist, err := client.GetPlaylist(ctx, spotify.ID(playlistID))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, err)
+			return
 		}
 		var playlistIDs []spotify.ID
 		if len(playlist.Tracks.Tracks) == 0 {
