@@ -32,6 +32,9 @@ type MusicPlots struct {
 	Plots []MusicPlot `json:"plots"`
 }
 
+var ctx context.Context
+var config *clientcredentials.Config
+
 func normalizeAudioFeatures(features *spotify.AudioFeatures, dim int) []float64 {
 	arr := make([]float64, dim)
 	arr[0] = float64(features.Acousticness)
@@ -154,10 +157,17 @@ func calcPCA(y *mat.Dense, dim int, artistAudioFeatures []*spotify.AudioFeatures
 	return
 
 }
+func getToken() (*spotify.Client, error) {
+	token, err := config.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	httpClient := spotifyauth.New().Client(ctx, token)
+	return spotify.New(httpClient), nil
+}
 
 // TODO 検索の際にアーティスト以外にも対応
 func search(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
-
 	return func(c *gin.Context) {
 		// 何も指定していない場合はアーティスト名がaから始まるものについて出力
 		searchQuery := c.Query("q")
@@ -166,8 +176,13 @@ func search(client *spotify.Client, ctx context.Context) func(c *gin.Context) {
 		}
 		searchResult, err := client.Search(ctx, searchQuery, spotify.SearchTypeArtist)
 		if err != nil {
-			log.Fatal(err)
 			c.JSON(err.(spotify.Error).Status, err.Error())
+			// TODO errorの処理方法を考える
+			// handlerとして関数を渡すなど
+			client, err = getToken()
+			if err != nil {
+				fmt.Println(err.Error())
+			}
 			return
 		}
 		c.JSON(http.StatusOK, searchResult)
@@ -178,7 +193,8 @@ func TokenProxy() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		remote, err := url.Parse("https://accounts.spotify.com/api/token")
 		if err != nil {
-			panic(err)
+			fmt.Println(err.Error())
+			return
 		}
 		token := os.Getenv("SPOTIFY_BASIC_KEY")
 		proxy := httputil.NewSingleHostReverseProxy(remote)
@@ -225,19 +241,18 @@ func setCors() cors.Config {
 func main() {
 	r := gin.Default()
 
-	ctx := context.Background()
+	ctx = context.Background()
 
-	config := &clientcredentials.Config{
+	config = &clientcredentials.Config{
 		ClientID:     os.Getenv("SPOTIFY_ID"),
 		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
 		TokenURL:     spotifyauth.TokenURL,
 	}
-	token, err := config.Token(ctx)
+	client, err := getToken()
 	if err != nil {
-		log.Fatalf("couldn't get token: %v", err)
+		fmt.Println(err.Error())
+		os.Exit(1)
 	}
-	httpClient := spotifyauth.New().Client(ctx, token)
-	client := spotify.New(httpClient)
 	apiToken := r.RouterGroup.Group("/api")
 	apiToken.POST("/token", TokenProxy())
 	r.Use(cors.New(setCors()))
