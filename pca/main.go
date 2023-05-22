@@ -1,5 +1,0 @@
-package pca
-
-func main() {
-
-}
