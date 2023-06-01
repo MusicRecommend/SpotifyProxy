@@ -28,11 +28,12 @@ func (sh *SpotifyHandler) updateClient() error {
 	sh.client = spotify.New(httpClient)
 	return nil
 }
-func NewSpotifyHandler(config *clientcredentials.Config, ctx context.Context) (error, SpotifyHandler) {
-	sh := SpotifyHandler{
+func NewSpotifyHandler(config *clientcredentials.Config, ctx context.Context) (error, *SpotifyHandler) {
+	sh := &SpotifyHandler{
 		config: config,
 		ctx:    ctx,
 	}
+
 	// TODOここを分離
 	go func() {
 		t := time.NewTicker(55 * time.Minute) // 55分おきに通知
@@ -59,8 +60,9 @@ type SpotifyHandler struct {
 
 // TODO 検索の際にアーティスト以外にも対応
 // チェックする前にtokenが切れてないことを確認する。
-func (sh SpotifyHandler) search() func(c *gin.Context) {
+func (sh *SpotifyHandler) search() func(c *gin.Context) {
 	return func(c *gin.Context) {
+
 		// 何も指定していない場合はアーティスト名がaから始まるものについて出力
 		searchQuery := c.Query("q")
 		if searchQuery == "" {
@@ -98,7 +100,7 @@ func TokenProxy() func(c *gin.Context) {
 }
 
 // TODO 最終的にはデータの取得のみを行うように
-func (sh SpotifyHandler) PCA() func(c *gin.Context) {
+func (sh *SpotifyHandler) PCA() func(c *gin.Context) {
 	dim := 9
 	return func(c *gin.Context) {
 		// 何も指定していない場合はアーティスト名がaから始まるものについて出力
