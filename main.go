@@ -34,6 +34,7 @@ func main() {
 	r.Use(cors.New(setCors()))
 	spotify := r.RouterGroup.Group("/v1")
 	spotify.GET("/search", spotifyHandler.search())
+	spotify.GET("/track", spotifyHandler.getTrack())
 	spotify.GET("/pca", spotifyHandler.PCA())
 	r.Run(":" + os.Getenv("API_PORT"))
 }

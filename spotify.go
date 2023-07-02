@@ -78,6 +78,21 @@ func (sh *SpotifyHandler) search() func(c *gin.Context) {
 	}
 }
 
+// TrackIDからTrackを取得
+func (sh *SpotifyHandler) getTrack() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		searchQuery := c.Query("trackID")
+		if searchQuery == "" {
+			c.JSON(http.StatusBadRequest, "")
+		}
+		fullTrack, err := sh.client.GetTrack(sh.ctx, spotify.ID(searchQuery))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, err.Error())
+			return
+		}
+		c.JSON(http.StatusOK, fullTrack)
+	}
+}
 func TokenProxy() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		remote, err := url.Parse("https://accounts.spotify.com/api/token")
