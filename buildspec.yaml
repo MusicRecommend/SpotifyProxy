@@ -1,7 +1,7 @@
 version: 0.2
 env:
   variables:
-    IMAGE_NAME: "go/server"
+    IMAGE_NAME: "spotify_recommend_app"
 phases:
   install:
     runtime-versions:
