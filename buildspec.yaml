@@ -1,7 +1,13 @@
 version: 0.2
 env:
   parameter-store:
-    ssm_parameter: SpotifyProxyProduction
+    ALLOW_ORIGIN: "ALLOW_ORIGIN"
+    API_PORT: "API_PORT"
+    SPOTIFY_ENDPOINT: "SPOTIFY_ENDPOINT"
+    SPOTIFY_ID: "SPOTIFY_ID"
+    SPOTIFY_SECRET: "SPOTIFY_SECRET"
+    SPOTIFY_BASIC_KEY: "SPOTIFY_BASIC_KEY"
+
   variables:
     IMAGE_NAME: "spotify_recommend_app"
 phases:
@@ -10,7 +16,12 @@ phases:
       docker: 18
   pre_build:
     commands:
-      - echo ${ssm_parameter} > env/prd.env
+      - echo ${ALLOW_ORIGIN}
+      - echo ${API_PORT}
+      - echo ${SPOTIFY_ENDPOINT}
+      - echo ${SPOTIFY_ID}
+      - echo ${SPOTIFY_SECRET}
+      - echo ${SPOTIFY_BASIC_KEY}
       - $(aws ecr get-login --no-include-email --region ${AWS_DEFAULT_REGION})
       - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
       - URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}
