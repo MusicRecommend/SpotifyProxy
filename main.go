@@ -27,6 +27,8 @@ func main() {
 	if err != nil {
 		fmt.Printf("spotify Clientの取得に失敗:%v", err)
 		os.Exit(1)
+	} else {
+		fmt.Println("start application")
 	}
 	apiToken := r.RouterGroup.Group("/api")
 	apiToken.POST("/token", TokenProxy())
