@@ -16,12 +16,12 @@ phases:
       docker: 18
   pre_build:
     commands:
-      - echo ${ALLOW_ORIGIN}
-      - echo ${API_PORT}
-      - echo ${SPOTIFY_ENDPOINT}
-      - echo ${SPOTIFY_ID}
-      - echo ${SPOTIFY_SECRET}
-      - echo ${SPOTIFY_BASIC_KEY}
+      - export ALLOW_ORIGIN=${ALLOW_ORIGIN}
+      - export API_PORT=${API_PORT}
+      - export SPOTIFY_ENDPOINT=${SPOTIFY_ENDPOINT}
+      - export SPOTIFY_ID=${SPOTIFY_ID}
+      - export SPOTIFY_SECRET=${SPOTIFY_SECRET}
+      - export SPOTIFY_BASIC_KEY=${SPOTIFY_BASIC_KEY}
       - $(aws ecr get-login --no-include-email --region ${AWS_DEFAULT_REGION})
       - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
       - URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}
