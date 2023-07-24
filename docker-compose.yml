@@ -3,7 +3,7 @@ services:
   proxy:
     build: .
     ports:
-      - '8000:8000'
+      - '80:80'
     volumes:
       - .:/go/src/app
     env_file:
