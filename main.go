@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/gin-contrib/cors"
@@ -26,7 +27,6 @@ func main() {
 	err, spotifyHandler := NewSpotifyHandler(config, ctx)
 	if err != nil {
 		fmt.Printf("spotify Clientの取得に失敗:%v", err)
-		os.Exit(1)
 	} else {
 		fmt.Println("start application")
 	}
@@ -35,8 +35,11 @@ func main() {
 
 	r.Use(cors.New(setCors()))
 	spotify := r.RouterGroup.Group("/v1")
+	spotify.GET("/hello", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, "hello")
+	})
 	spotify.GET("/search", spotifyHandler.search())
 	spotify.GET("/track", spotifyHandler.getTrack())
 	spotify.GET("/pca", spotifyHandler.PCA())
-	r.Run(":" + os.Getenv("API_PORT"))
+	r.Run(":80")
 }
