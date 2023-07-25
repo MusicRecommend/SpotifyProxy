@@ -6,10 +6,13 @@ ENV TZ /usr/share/zoneinfo/Asia/Tokyo
 ENV GO111MODULE=on
 
 RUN go install github.com/cosmtrek/air@v1.29.0
+RUN apk update && apk add git
 
 # Download Go modules
+COPY main.go .
+COPY pca ./pca
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod tidy
 
 # Copy the source code. Note the slash at the end, as explained in
 # https://docs.docker.com/engine/reference/builder/#copy
@@ -26,4 +29,4 @@ RUN go mod download
 EXPOSE 80
 
 # Run
-CMD ["air"]
+CMD go run main.go
