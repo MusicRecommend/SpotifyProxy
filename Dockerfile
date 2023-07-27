@@ -1,4 +1,4 @@
-FROM golang:1.20.3-alpine
+FROM golang:1.19.3-alpine
 ENV ROOT=/go/src/app
 WORKDIR ${ROOT}
 # Set destination for COPY
@@ -9,11 +9,11 @@ RUN go install github.com/cosmtrek/air@v1.29.0
 RUN apk update && apk add git
 
 # Download Go modules
-COPY main.go .
+COPY *.go ./
 COPY pca ./pca
-COPY go.mod go.sum ./
+COPY go.mod .
+COPY go.sum .
 RUN go mod tidy
-
 # Copy the source code. Note the slash at the end, as explained in
 # https://docs.docker.com/engine/reference/builder/#copy
 # COPY *.go ./
@@ -29,4 +29,4 @@ RUN go mod tidy
 EXPOSE 80
 
 # Run
-CMD go run main.go
+CMD go run .
