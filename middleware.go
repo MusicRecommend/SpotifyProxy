@@ -26,7 +26,7 @@ func parseOrigins(originsENV string) []string {
 func setCors() cors.Config {
 	return cors.Config{
 		// アクセスを許可したいアクセス元
-		AllowOrigins: parseOrigins(os.Getenv("ALLOW_ORIGIN")),
+		AllowOrigins: parseOrigins(os.Getenv("ALLOW_ORIGINS")),
 		// アクセスを許可したいHTTPメソッド(以下の例だとPUTやDELETEはアクセスできません)
 		AllowMethods: []string{
 			"POST",

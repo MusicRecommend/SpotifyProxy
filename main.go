@@ -24,6 +24,7 @@ func main() {
 		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
 		TokenURL:     spotifyauth.TokenURL,
 	}
+	fmt.Println(os.Getenv("SPOTIFY_ID"))
 	err, spotifyHandler := NewSpotifyHandler(config, ctx)
 	if err != nil {
 		fmt.Printf("spotify Clientの取得に失敗:%v", err)
