@@ -73,6 +73,10 @@ func (sh *SpotifyHandler) search() func(c *gin.Context) {
 		switch typeQuery {
 		case "playlists":
 			searchResult, err = sh.client.Search(sh.ctx, searchQuery, spotify.SearchTypePlaylist)
+			if err == nil {
+				c.JSON(http.StatusOK, searchResult.Playlists)
+				return
+			}
 		case "artists":
 			searchResult, err = sh.client.Search(sh.ctx, searchQuery, spotify.SearchTypeArtist)
 		default:
