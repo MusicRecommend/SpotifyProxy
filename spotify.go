@@ -62,13 +62,22 @@ type SpotifyHandler struct {
 // チェックする前にtokenが切れてないことを確認する。
 func (sh *SpotifyHandler) search() func(c *gin.Context) {
 	return func(c *gin.Context) {
-
+		typeQuery := c.Query("type")
 		// 何も指定していない場合はアーティスト名がaから始まるものについて出力
 		searchQuery := c.Query("q")
 		if searchQuery == "" {
 			searchQuery = "a"
 		}
-		searchResult, err := sh.client.Search(sh.ctx, searchQuery, spotify.SearchTypeArtist)
+		var err error
+		var searchResult *spotify.SearchResult
+		switch typeQuery {
+		case "playlists":
+			searchResult, err = sh.client.Search(sh.ctx, searchQuery, spotify.SearchTypePlaylist)
+		case "artists":
+			searchResult, err = sh.client.Search(sh.ctx, searchQuery, spotify.SearchTypeArtist)
+		default:
+			searchResult, err = sh.client.Search(sh.ctx, searchQuery, spotify.SearchTypeArtist)
+		}
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, err.Error())
